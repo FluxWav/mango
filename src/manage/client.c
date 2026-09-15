@@ -1307,7 +1307,6 @@ void apply_rule_properties(Client *c, const ConfigWinRule *r) {
 	APPLY_INT_PROP(c, r, force_tiled_state);
 	APPLY_INT_PROP(c, r, force_tearing);
 	APPLY_INT_PROP(c, r, noswallow);
-	APPLY_INT_PROP(c, r, confine_pointer);
 	APPLY_INT_PROP(c, r, nofocus);
 	APPLY_INT_PROP(c, r, nofadein);
 	APPLY_INT_PROP(c, r, nofadeout);
@@ -2412,7 +2411,6 @@ void handle_client_destroy(struct wl_listener *listener, void *data) {
 		wl_list_remove(&c->set_decoration_mode.link);
 	}
 	switcher_remove_client(c);
-	pointer_client_destroyed(c);
 	free(c);
 }
 
@@ -2685,7 +2683,6 @@ void client_focus(Client *c, int32_t lift) {
 		if (server.active_constraint) {
 			pointer_constrain_cursor(NULL);
 		}
-		pointer_check_confine_client();
 		return;
 	}
 
@@ -2709,8 +2706,6 @@ void client_focus(Client *c, int32_t lift) {
 	}
 
 	client_ensure_constraint(c);
-
-	pointer_check_confine_client();
 }
 
 void client_active(Client *c) {
