@@ -29,6 +29,8 @@ libm = cc.find_library('m')
 libdrm = dependency('libdrm')
 xcb = dependency('xcb', required : get_option('xwayland'))
 xlibs = dependency('xcb-icccm', required : get_option('xwayland'))
+xcb_randr = dependency('xcb-randr', required : get_option('xwayland'))
+wayland_server_dep = dependency('wayland-server',version: '>=1.23.1')
 wlroots_dep = dependency('wlroots-0.20',version: '>=0.20.0')
 wayland_server_dep = dependency('wayland-server',version: '>=1.23.1')
 xkbcommon_dep = dependency('xkbcommon')
@@ -113,6 +115,7 @@ executable('mango',
     libdrm,
     xcb,
     xlibs,
+    xcb_randr,
     wayland_server_dep,
     wlroots_dep,
     xkbcommon_dep,
