@@ -599,6 +599,11 @@ void client_set_drop_area(Client *c) {
 	int32_t client_width = c->geom.width - 2 * bw;
 	int32_t client_height = c->geom.height - 2 * bw;
 
+	if (client_width <= 0 || client_height <= 0) {
+		wlr_scene_node_set_enabled(&c->droparea->node, false);
+		return;
+	}
+
 	double rel_x = server.cursor->x - c->geom.x - bw;
 	double rel_y = server.cursor->y - c->geom.y - bw;
 
