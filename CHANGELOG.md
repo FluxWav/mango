@@ -43,3 +43,29 @@ friendliness if this ever goes upstream.
 
 **Next:** install `meson`, do a first nested build of the *unmodified* tree
 as an end-to-end build sanity check before writing any feature code.
+
+## 2026-09-18 — First nested build (unmodified tree)
+
+**Done:**
+- Installed `meson` (`pkexec pacman -S meson` — no TTY available for a
+  `sudo` prompt in this session; `pkexec` triggered the polkit GUI prompt
+  instead).
+- `meson setup build --prefix=$HOME/.local/mango-dev && ninja -C build` —
+  clean build, every dependency found exactly as verified in the prior
+  entry, no errors.
+- Ran `./build/mango -d -c ./test-nested.conf` (a minimal throwaway config,
+  `test-nested.conf`, gitignored — deliberately not the real desktop
+  config, to avoid spawning a second noctalia instance against live state).
+  Confirmed genuinely nested (not grabbing the real display) via the log
+  line `backend/wayland/output.c:217] DMA-BUF imported into parent Wayland
+  compositor`, and confirmed the instance was fully live via `mmsg` against
+  its own socket (`mango-<pid>.sock`, separate from the real session's):
+  `WL-1` output at 1862x2060, 4 tags, version `0.17.2(091dc44a)` matching
+  this branch's HEAD commit exactly. Quit cleanly with `mmsg dispatch
+  quit`.
+
+**Verification:** IPC-level (`mmsg get version`, `get all-monitors`)
+against the nested instance's own socket — not a screenshot.
+
+**Next:** config parsing (`overview_group_by_tag`, `tagcolors`) in
+`src/config/parse_config.c`.
