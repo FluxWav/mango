@@ -26,6 +26,9 @@ bool try_place(OvPlacedRect *placed, int placed_cnt, float w, float h,
 			   float gap, float avail_w, float avail_h, OvPlacedRect *out,
 			   OvPoint *cands, OvPoint *feas);
 void overview_scale(Monitor *m);
+void overview_pack_region(Client **client_list, int n, struct wlr_box region,
+						  int32_t gap_inner);
+void overview_scale_grouped(Monitor *m);
 // Overview layout: focused window centered (about half screen width), remaining
 // windows split on both sides.
 void overview_layout_column(Monitor *m, Client **items, int cnt, float x,

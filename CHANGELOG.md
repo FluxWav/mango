@@ -114,3 +114,39 @@ correctness (badge text/position, border color) not yet visually confirmed
 
 **Next:** the spatial grouping/partition algorithm
 (`overview_scale_grouped()`), the riskiest and largest remaining piece.
+
+## 2026-09-18 — Grouping/partition algorithm
+
+**Done:**
+- Extracted `overview_pack_region(Client **client_list, int n, struct
+  wlr_box region, int32_t gap_inner)` out of `overview_scale()` — same
+  qsort/`try_place()`/binary-search-on-scale/`center_placed_rows()`/
+  `client_tile_resize()` logic, generalized to an arbitrary target box and
+  client subset instead of hardcoded to the whole monitor and all clients.
+  `overview_scale()` is now a thin wrapper: builds the client list, computes
+  the monitor's gappo-inset box, calls the shared helper once.
+- New `overview_scale_grouped(Monitor *m)`: buckets visible clients by
+  `get_client_tag_idx()`, builds the ascending occupied-tags list, cascades
+  the outer box (most-recently-added region splits in half per new
+  occupied tag, axis via the same `width >= height` rule `dwindle_assign`
+  uses), packs each region via the shared helper. Wired into `overview()`:
+  `config.overview_group_by_tag` picks this path over the flat one (the
+  `ov_tab_layout`/overcircle branch is unaffected, checked first).
+
+**Verification (nested, structural via `mmsg`, not yet visual):**
+- 5 real ghostty windows across 3 tags (2/1/2 split), `overview_group_by_tag
+  = 1`: triggered `toggleoverview`, no crash, and the resulting geometry
+  matched the intended cascade exactly — tag 1 top half full-width, tag 2
+  bottom-left quadrant, tag 3 bottom-right quadrant, zero region overlap,
+  clean 30px gaps matching `overviewgappo`.
+- Same window layout with `overview_group_by_tag = 0`: both windows from
+  different tags landed back in one flat packed grid together, confirming
+  the refactor didn't change existing flat-mode behavior.
+
+**Not yet done:** 4-occupied-tag case untested; real pixel appearance
+(badge text/position, border color) unconfirmed — IPC geometry checks
+can't see color or text rendering, need an actual look at the nested
+window.
+
+**Next:** a real visual pass (someone actually looking at the nested
+window), then decide on daily-use packaging (SDDM session entry).

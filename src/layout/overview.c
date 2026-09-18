@@ -214,47 +214,38 @@ static void center_placed_rows(OvPlacedRect *placed, int n, float gap) {
 	free(row_order);
 }
 
-void overview_scale(Monitor *m) {
-	int32_t target_gappo = config.overviewgappo;
-	int32_t target_gappi = config.overviewgappi;
-
-	int orig_n = m->visible_clients;
-	if (orig_n == 0)
+// Packs client_list (n items) into region using the same "largest-first,
+// binary-search-on-scale" bin-packing as the original flat overview_scale,
+// generalized to an arbitrary target box and client subset so it can be
+// reused per-region by overview_scale_grouped. gap_inner is the spacing
+// between individual windows inside region (overviewgappi in both callers).
+void overview_pack_region(Client **client_list, int n, struct wlr_box region,
+						  int32_t gap_inner) {
+	if (n <= 0)
 		return;
 
-	OvLayoutItem *items = calloc(orig_n, sizeof(OvLayoutItem));
+	OvLayoutItem *items = calloc(n, sizeof(OvLayoutItem));
 	if (!items)
 		return;
 
-	int n = 0;
-	Client *c;
-	wl_list_for_each(c, &server.clients, link) {
-		if (c->mon != m)
-			continue;
-		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
-			items[n].c = c;
-			float w = c->overview_backup_geom.width;
-			float h = c->overview_backup_geom.height;
-			if (w <= 0 || h <= 0) {
-				w = 100.0f;
-				h = 100.0f;
-			}
-			items[n].orig_w = w;
-			items[n].orig_h = h;
-			items[n].area = w * h;
-			n++;
+	for (int k = 0; k < n; k++) {
+		Client *c = client_list[k];
+		items[k].c = c;
+		float w = c->overview_backup_geom.width;
+		float h = c->overview_backup_geom.height;
+		if (w <= 0 || h <= 0) {
+			w = 100.0f;
+			h = 100.0f;
 		}
-	}
-
-	if (n == 0) {
-		free(items);
-		return;
+		items[k].orig_w = w;
+		items[k].orig_h = h;
+		items[k].area = w * h;
 	}
 
 	qsort(items, n, sizeof(OvLayoutItem), compare_layout_items);
 
-	float max_avail_w = fmaxf(1.0f, m->w.width - 2 * target_gappo);
-	float max_avail_h = fmaxf(1.0f, m->w.height - 2 * target_gappo);
+	float max_avail_w = fmaxf(1.0f, (float)region.width);
+	float max_avail_h = fmaxf(1.0f, (float)region.height);
 
 	int max_points = 1 + 3 * n;
 	OvPlacedRect *placed = calloc(n, sizeof(OvPlacedRect));
@@ -279,7 +270,7 @@ void overview_scale(Monitor *m) {
 			float w = items[k].orig_w * mid;
 			float h = items[k].orig_h * mid;
 			OvPlacedRect out;
-			if (!try_place(placed, placed_cnt, w, h, (float)target_gappi,
+			if (!try_place(placed, placed_cnt, w, h, (float)gap_inner,
 						   max_avail_w, max_avail_h, &out, cands, feas)) {
 				ok = false;
 				break;
@@ -302,12 +293,12 @@ void overview_scale(Monitor *m) {
 			float w = items[k].orig_w * best_s;
 			float h = items[k].orig_h * best_s;
 			OvPlacedRect out;
-			try_place(placed, placed_cnt, w, h, (float)target_gappi,
-					  max_avail_w, max_avail_h, &out, cands, feas);
+			try_place(placed, placed_cnt, w, h, (float)gap_inner, max_avail_w,
+					  max_avail_h, &out, cands, feas);
 			placed[placed_cnt++] = out;
 		}
 
-		center_placed_rows(placed, n, (float)target_gappi);
+		center_placed_rows(placed, n, (float)gap_inner);
 
 		float box_w = 0, box_h = 0;
 		for (int k = 0; k < n; k++) {
@@ -321,8 +312,8 @@ void overview_scale(Monitor *m) {
 
 		float dx = (max_avail_w - box_w) / 2.0f;
 		float dy = (max_avail_h - box_h) / 2.0f;
-		float base_x = m->w.x + target_gappo + dx;
-		float base_y = m->w.y + target_gappo + dy;
+		float base_x = region.x + dx;
+		float base_y = region.y + dy;
 
 		// Collects the target geometry of all clients and calls
 		// client_tile_resize once at the end.
@@ -354,6 +345,143 @@ void overview_scale(Monitor *m) {
 	free(placed);
 	free(cands);
 	free(feas);
+}
+
+void overview_scale(Monitor *m) {
+	int32_t target_gappo = config.overviewgappo;
+	int32_t target_gappi = config.overviewgappi;
+
+	int orig_n = m->visible_clients;
+	if (orig_n == 0)
+		return;
+
+	Client **client_list = calloc(orig_n, sizeof(Client *));
+	if (!client_list)
+		return;
+
+	int n = 0;
+	Client *c;
+	wl_list_for_each(c, &server.clients, link) {
+		if (c->mon != m)
+			continue;
+		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
+			client_list[n++] = c;
+		}
+	}
+
+	if (n > 0) {
+		struct wlr_box region = {
+			.x = (int)(m->w.x + target_gappo),
+			.y = (int)(m->w.y + target_gappo),
+			.width = (int)fmaxf(1.0f, m->w.width - 2 * target_gappo),
+			.height = (int)fmaxf(1.0f, m->w.height - 2 * target_gappo),
+		};
+		overview_pack_region(client_list, n, region, target_gappi);
+	}
+
+	free(client_list);
+}
+
+// Tag-grouped overview: partitions the overview area into one region per
+// occupied tag (ascending tag index), cascading the same way dwindle
+// cascades a new client next to the focused leaf -- each additional
+// occupied tag splits the most-recently-added region in half, axis chosen
+// by that region's own aspect ratio (mirrors dwindle_assign's own rule).
+// Each region is then packed independently via overview_pack_region.
+void overview_scale_grouped(Monitor *m) {
+	int32_t target_gappo = config.overviewgappo;
+	int32_t target_gappi = config.overviewgappi;
+
+	int orig_n = m->visible_clients;
+	if (orig_n == 0)
+		return;
+
+	// Bucket visible clients by tag index (0-based, 0..tag_num_MAX).
+	Client **by_tag[tag_num_MAX + 1] = {0};
+	int count_by_tag[tag_num_MAX + 1] = {0};
+	Client *c;
+	wl_list_for_each(c, &server.clients, link) {
+		if (c->mon != m)
+			continue;
+		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
+			count_by_tag[get_client_tag_idx(c)]++;
+		}
+	}
+
+	int occupied_tags[tag_num_MAX + 1];
+	int occupied_count = 0;
+	for (int t = 0; t <= tag_num_MAX; t++) {
+		if (count_by_tag[t] > 0) {
+			by_tag[t] = calloc(count_by_tag[t], sizeof(Client *));
+			if (!by_tag[t]) {
+				for (int j = 0; j < t; j++)
+					free(by_tag[j]);
+				return;
+			}
+			occupied_tags[occupied_count++] = t;
+		}
+	}
+
+	if (occupied_count == 0)
+		return;
+
+	int fill_idx[tag_num_MAX + 1] = {0};
+	wl_list_for_each(c, &server.clients, link) {
+		if (c->mon != m)
+			continue;
+		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
+			int t = get_client_tag_idx(c);
+			by_tag[t][fill_idx[t]++] = c;
+		}
+	}
+
+	// Single-tag case: identical to the flat layout, just via the shared
+	// helper -- no cascade needed.
+	struct wlr_box outer = {
+		.x = (int)(m->w.x + target_gappo),
+		.y = (int)(m->w.y + target_gappo),
+		.width = (int)fmaxf(1.0f, m->w.width - 2 * target_gappo),
+		.height = (int)fmaxf(1.0f, m->w.height - 2 * target_gappo),
+	};
+
+	struct wlr_box regions[tag_num_MAX + 1];
+	regions[0] = outer;
+	for (int i = 1; i < occupied_count; i++) {
+		struct wlr_box *last = &regions[i - 1];
+		bool split_h = last->width >= last->height;
+		if (split_h) {
+			int half_w =
+				(int)fmaxf(1.0f, (last->width - target_gappo) / 2.0f);
+			struct wlr_box first_half = {last->x, last->y, half_w,
+										 last->height};
+			struct wlr_box second_half = {last->x + half_w + target_gappo,
+										  last->y,
+										  last->width - half_w - target_gappo,
+										  last->height};
+			*last = first_half;
+			regions[i] = second_half;
+		} else {
+			int half_h =
+				(int)fmaxf(1.0f, (last->height - target_gappo) / 2.0f);
+			struct wlr_box first_half = {last->x, last->y, last->width,
+										 half_h};
+			struct wlr_box second_half = {last->x,
+										  last->y + half_h + target_gappo,
+										  last->width,
+										  last->height - half_h - target_gappo};
+			*last = first_half;
+			regions[i] = second_half;
+		}
+	}
+
+	for (int i = 0; i < occupied_count; i++) {
+		int t = occupied_tags[i];
+		overview_pack_region(by_tag[t], count_by_tag[t], regions[i],
+							 target_gappi);
+	}
+
+	for (int t = 0; t <= tag_num_MAX; t++)
+		free(by_tag[t]);
 }
 
 // Overview layout: focused window centered (about half screen width), remaining
@@ -583,6 +711,8 @@ void finish_jump_mode(Monitor *m) {
 void overview(Monitor *m) {
 	if (m->ov_tab_layout && !m->is_jump_mode && !m->ov_normal_mode) {
 		overview_scale_tab(m);
+	} else if (config.overview_group_by_tag) {
+		overview_scale_grouped(m);
 	} else {
 		overview_scale(m);
 	}
