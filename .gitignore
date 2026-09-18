@@ -13,3 +13,6 @@ util.o
 
 .envrc
 .direnv
+
+# local working doc, never committed
+DESIGN.md
