@@ -45,8 +45,11 @@ of grabbing the real display.
 
 ```
 overview_group_by_tag = 1
-tagcolors = #47add6,#b153a7,#14a57c,#ad401f
+tagcolors = 0x47add6ff,0xb153a7ff,0x14a57cff,0xad401fff
 ```
+
+(`0xRRGGBBAA` format, matching mango's existing `bordercolor`-style config
+values — not CSS `#RRGGBB`.)
 
 in your mango config. Off by default — stock behavior is unchanged when
 unset.

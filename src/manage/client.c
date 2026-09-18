@@ -1103,7 +1103,9 @@ Client *get_next_stack_client(Client *c, bool reverse) {
 
 float *get_border_color(Client *c) {
 
-	if (c->mon != server.selected_monitor) {
+	if (c->mon && c->mon->isoverview && config.overview_group_by_tag) {
+		return config.tag_colors[get_client_tag_idx(c)];
+	} else if (c->mon != server.selected_monitor) {
 		return config.bordercolor;
 	} else if (c->isurgent) {
 		return config.urgentcolor;
@@ -1875,6 +1877,7 @@ void init_client_properties(Client *c) {
 	c->grid_col_per = 1.0f;
 	c->grid_row_per = 1.0f;
 	c->jump_label_node = NULL;
+	c->tag_label_node = NULL;
 	c->group_bar = NULL;
 	c->overview_scene_surface = NULL;
 	c->drop_direction = UNDIR;
@@ -2381,6 +2384,11 @@ void handle_client_unmap(struct wl_listener *listener, void *data) {
 	if (c->jump_label_node) {
 		mango_jump_label_node_destroy(c->jump_label_node);
 		c->jump_label_node = NULL;
+	}
+
+	if (c->tag_label_node) {
+		mango_jump_label_node_destroy(c->tag_label_node);
+		c->tag_label_node = NULL;
 	}
 
 	if (c->group_bar) {
@@ -3841,6 +3849,29 @@ void client_add_jump_label_node(Client *c) {
 	else
 		wlr_scene_node_lower_to_bottom(&c->jump_label_node->scene_buffer->node);
 	wlr_scene_node_set_enabled(&c->jump_label_node->scene_buffer->node, false);
+}
+
+// Always-on tag-number badge for tag-grouped overview mode (distinct from
+// jump_label_node, which only shows a keyboard-hint letter in jump mode).
+// Reuses the same MangoJumpLabel drawing code, colored per the client's tag.
+void client_add_tag_label_node(Client *c) {
+	c->tag_label_node =
+		mango_jump_label_node_create(c->scene, config.jumplabeldata);
+	if (!c->tag_label_node)
+		return;
+	if (c->ov_card_tree)
+		wlr_scene_node_raise_to_top(&c->tag_label_node->scene_buffer->node);
+	else
+		wlr_scene_node_lower_to_bottom(&c->tag_label_node->scene_buffer->node);
+
+	float *tc = config.tag_colors[get_client_tag_idx(c)];
+	mango_jump_label_node_set_background(c->tag_label_node, tc[0], tc[1],
+										 tc[2], tc[3]);
+	mango_jump_label_node_set_border(c->tag_label_node, tc[0], tc[1], tc[2],
+									 1.0f, config.jumplabeldata.border_width,
+									 config.jumplabeldata.corner_radius);
+
+	wlr_scene_node_set_enabled(&c->tag_label_node->scene_buffer->node, false);
 }
 
 // scene layer a client belongs to; shown scratchpads join the special

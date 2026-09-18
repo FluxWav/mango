@@ -1168,6 +1168,11 @@ void pre_calculate_before_arrange(Monitor *m, bool want_animation,
 			client_add_jump_label_node(c);
 		}
 
+		if (m->isoverview && config.overview_group_by_tag &&
+			!c->tag_label_node) {
+			client_add_tag_label_node(c);
+		}
+
 		if (c->group_bar->scene_buffer->node.enabled) {
 			client_check_tab_node_visible(c);
 		}

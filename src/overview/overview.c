@@ -231,6 +231,7 @@ void overview_layout_card(Client *c) {
 	}
 
 	overview_update_jump_label(c);
+	overview_update_tag_badge(c);
 }
 
 void overview_update_jump_label(Client *c) {
@@ -263,6 +264,48 @@ void overview_update_jump_label(Client *c) {
 	if (!label->enabled) {
 		wlr_scene_node_set_enabled(label, true);
 		wlr_scene_node_raise_to_top(label);
+	}
+}
+
+// Always-on tag-number badge for tag-grouped overview mode, corner-
+// positioned (unlike overview_update_jump_label, which is centered and
+// jump-mode-only).
+#define TAG_BADGE_MARGIN 6
+
+void overview_update_tag_badge(Client *c) {
+	if (!c || !c->mon || !c->ov_card_tree || !c->tag_label_node ||
+		!c->mon->isoverview || !config.overview_group_by_tag)
+		return;
+
+	char text[8];
+	snprintf(text, sizeof(text), "%u", get_client_tag_idx(c) + 1);
+	mango_jump_label_node_update(c->tag_label_node, text,
+								 c->mon->wlr_output->scale);
+
+	struct wlr_scene_node *badge = &c->tag_label_node->scene_buffer->node;
+	int32_t lw = c->tag_label_node->logical_width;
+	int32_t lh = c->tag_label_node->logical_height;
+	if (lw <= 0 || lh <= 0) {
+		if (badge->enabled)
+			wlr_scene_node_set_enabled(badge, false);
+		return;
+	}
+
+	struct wlr_box cur = c->animation.current;
+	int32_t lx = cur.x + TAG_BADGE_MARGIN;
+	int32_t ly = cur.y + TAG_BADGE_MARGIN;
+	if (lx < c->mon->m.x || ly < c->mon->m.y ||
+		lx + lw > c->mon->m.x + c->mon->m.width ||
+		ly + lh > c->mon->m.y + c->mon->m.height) {
+		if (badge->enabled)
+			wlr_scene_node_set_enabled(badge, false);
+		return;
+	}
+
+	wlr_scene_node_set_position(badge, TAG_BADGE_MARGIN, TAG_BADGE_MARGIN);
+	if (!badge->enabled) {
+		wlr_scene_node_set_enabled(badge, true);
+		wlr_scene_node_raise_to_top(badge);
 	}
 }
 
@@ -354,6 +397,10 @@ void overview_backup(Client *c) {
 
 	client_set_tiled(c, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT |
 							WLR_EDGE_RIGHT);
+
+	// Refreshes the border color in case tag-grouped overview mode wants it
+	// tag-colored instead of the normal focus/unfocused color.
+	client_update_border_color(c);
 }
 // Restores window state when switching back from overview to the normal view.
 void overview_restore(Client *c, const Arg *arg) {
@@ -407,5 +454,14 @@ void overview_restore(Client *c, const Arg *arg) {
 
 	if (c->isfloating && !c->force_tiled_state) {
 		client_set_tiled(c, WLR_EDGE_NONE);
+	}
+
+	// Reverts the tag-colored border (if tag-grouped overview mode set one)
+	// back to the normal focus/unfocused color.
+	client_update_border_color(c);
+
+	if (c->tag_label_node && c->tag_label_node->scene_buffer->node.enabled) {
+		wlr_scene_node_set_enabled(&c->tag_label_node->scene_buffer->node,
+								   false);
 	}
 }

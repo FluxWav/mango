@@ -2,6 +2,7 @@
 #define __CONFIG_PARSE_CONFIG_H__ 1
 
 #include "mango/common/types.h"
+#include "mango/config/preset.h"
 #include "mango/dispatch/bind.h"
 #include <scenefx/types/fx/blur_data.h>
 #include <stdbool.h>
@@ -379,6 +380,10 @@ typedef struct {
 	int32_t overviewgappo;
 	float overcircle_center_ratio;
 	char *jump_labels;
+
+	/* tag-grouped overview */
+	int32_t overview_group_by_tag;
+	float tag_colors[tag_num_MAX + 1][4];
 	uint32_t cursor_hide_timeout;
 	uint32_t cursor_hide_on_keypress;
 

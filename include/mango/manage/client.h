@@ -79,6 +79,7 @@ struct Client {
 	struct wlr_scene_surface *image_capture_scene_surface;
 	struct wlr_scene_tree *overview_scene_surface;
 	MangoJumpLabel *jump_label_node;
+	MangoJumpLabel *tag_label_node;
 	MangoGroupBar *group_bar;
 	struct wl_list link;
 	struct wl_list flink;
@@ -406,6 +407,8 @@ void client_tile_resize(Client *c, struct wlr_box geo, int32_t interact);
 uint32_t generate_client_id(void);
 void client_pending_force_kill(Client *c);
 void client_add_jump_label_node(Client *c);
+void client_add_tag_label_node(Client *c);
+void overview_update_tag_badge(Client *c);
 uint32_t client_target_layer(Client *c);
 void client_sync_layer(Client *c);
 void client_add_group_bar(Client *c);

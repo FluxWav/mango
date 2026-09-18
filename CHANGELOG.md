@@ -69,3 +69,48 @@ against the nested instance's own socket — not a screenshot.
 
 **Next:** config parsing (`overview_group_by_tag`, `tagcolors`) in
 `src/config/parse_config.c`.
+
+## 2026-09-18 — Config parsing, per-card badge + border
+
+**Done:**
+- Config: `overview_group_by_tag` (bool) and `tagcolors` (comma list,
+  `0xRRGGBBAA` format — matching mango's existing `bordercolor`-style
+  convention, not CSS `#RRGGBB`) in `parse_config.h`/`.c`, following the
+  same 5-touchpoint pattern as `enable_hotarea`/`jump_labels` (struct
+  field, parser branch, clamp, default). Default palette of 8 colors,
+  cycled if there are more tags than palette entries.
+- **Border**: reading `get_border_color()` (`src/manage/client.c:1104`)
+  showed mango already draws every window's border as a `wlr_scene_rect`
+  colored by that function — no new scene node needed. Added a first
+  branch returning `config.tag_colors[get_client_tag_idx(c)]` when
+  `m->isoverview && config.overview_group_by_tag`. Refreshed via
+  `client_update_border_color(c)` at the end of `overview_backup()` /
+  `overview_restore()` (`src/overview/overview.c`).
+- **Badge**: reading `include/mango/draw/text-node.h` showed mango already
+  has a full labeled-chip primitive, `MangoJumpLabel`, used for the
+  jump-mode keyboard hint (`Client.jump_label_node`). Added a second
+  always-on instance (`Client.tag_label_node`) instead of a new node type
+  — lazily created in `src/layout/arrange.c` (mirrors how
+  `jump_label_node` itself is created), colored via
+  `mango_jump_label_node_set_background()`/`set_border()` from
+  `config.tag_colors`, positioned top-left-corner (vs. jump label's
+  centered) in a new `overview_update_tag_badge()`
+  (`src/overview/overview.c`), called from the same `overview_layout_card()`
+  call site as the jump label. Explicitly disabled in `overview_restore()`
+  when leaving overview (mirrors `finish_jump_mode()`'s jump-label
+  disable) — without this it stays visible/stale after overview closes.
+  Destroyed alongside `jump_label_node` at client teardown.
+- Revised `DESIGN.md` to match — both pieces turned out simpler than the
+  original plan (reuse existing infra instead of new scene-rect/node
+  types) once the actual code was read.
+
+**Verification:** `ninja -C build` clean after each piece. Nested-tested
+with two real ghostty windows split across tags 1/2 (`test-nested.conf`,
+now includes `overview_group_by_tag = 1` and a `tagcolors` line): spawned
+both, triggered `toggleoverview`, confirmed via `mmsg get all-clients` both
+become `is_visible: true` and no crash/error in the debug log. Actual pixel
+correctness (badge text/position, border color) not yet visually confirmed
+— needs a real look, not just IPC state.
+
+**Next:** the spatial grouping/partition algorithm
+(`overview_scale_grouped()`), the riskiest and largest remaining piece.

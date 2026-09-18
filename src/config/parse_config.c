@@ -46,6 +46,15 @@ Config config;
  * configured). */
 const char default_jump_labels[] = "HJKLASDFGQWERTYUIOPZXCVBNM";
 
+/* Default tag-color palette (used when tagcolors is not configured);
+ * cycled through when there are more tags than palette entries. */
+static const uint32_t default_tag_colors[] = {
+	0x47add6ff, 0xb153a7ff, 0x14a57cff, 0xad401fff,
+	0xe0af68ff, 0x7aa2f7ff, 0x9ece6aff, 0xf7768eff,
+};
+#define DEFAULT_TAG_COLORS_COUNT                                             \
+	(sizeof(default_tag_colors) / sizeof(default_tag_colors[0]))
+
 /* Config file loading state. */
 static char **file_paths = NULL;
 static int file_paths_count = 0;
@@ -851,6 +860,26 @@ bool parse_option(Config *config, char *key, char *value, int line_number) {
 		if (config->jump_labels)
 			free(config->jump_labels);
 		config->jump_labels = strdup(value);
+	} else if (strcmp(key, "overview_group_by_tag") == 0) {
+		config->overview_group_by_tag = atoi(value);
+	} else if (strcmp(key, "tagcolors") == 0) {
+		char *dup = strdup(value);
+		char *token = strtok(dup, ",");
+		int32_t i = 0;
+		while (token != NULL && i <= tag_num_MAX) {
+			trim_whitespace(token);
+			int64_t color = parse_color(token);
+			if (color == -1) {
+				mango_error(false, WLR_ERROR, "Invalid tagcolors entry: %s\n",
+							token);
+				free(dup);
+				return false;
+			}
+			convert_hex_to_rgba(config->tag_colors[i], color);
+			i++;
+			token = strtok(NULL, ",");
+		}
+		free(dup);
 	} else if (strcmp(key, "cursor_hide_timeout") == 0) {
 		config->cursor_hide_timeout = atoi(value);
 	} else if (strcmp(key, "cursor_hide_on_keypress") == 0) {
@@ -3670,6 +3699,8 @@ void override_config(void) {
 	config.overviewgappo = CLAMP_INT(config.overviewgappo, 0, 1000);
 	config.overcircle_center_ratio =
 		CLAMP_FLOAT(config.overcircle_center_ratio, 0.1f, 0.9f);
+	config.overview_group_by_tag =
+		CLAMP_INT(config.overview_group_by_tag, 0, 1);
 	config.xwayland_persistence = CLAMP_INT(config.xwayland_persistence, 0, 1);
 	config.xwayland_ignore_scale =
 		CLAMP_INT(config.xwayland_ignore_scale, 0, 1);
@@ -3945,6 +3976,12 @@ void set_value_default() {
 	config.overviewgappi = 5;
 	config.overviewgappo = 30;
 	config.overcircle_center_ratio = 0.5f;
+	config.overview_group_by_tag = 0;
+	for (int32_t i = 0; i <= tag_num_MAX; i++) {
+		convert_hex_to_rgba(
+			config.tag_colors[i],
+			default_tag_colors[i % DEFAULT_TAG_COLORS_COUNT]);
+	}
 	config.cursor_hide_timeout = 0;
 	config.cursor_hide_on_keypress = 0;
 
