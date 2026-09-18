@@ -3865,8 +3865,8 @@ void client_add_tag_label_node(Client *c) {
 		wlr_scene_node_lower_to_bottom(&c->tag_label_node->scene_buffer->node);
 
 	float *tc = config.tag_colors[get_client_tag_idx(c)];
-	mango_jump_label_node_set_background(c->tag_label_node, tc[0], tc[1],
-										 tc[2], tc[3]);
+	mango_jump_label_node_set_background(c->tag_label_node, tc[0], tc[1], tc[2],
+										 tc[3]);
 	mango_jump_label_node_set_border(c->tag_label_node, tc[0], tc[1], tc[2],
 									 1.0f, config.jumplabeldata.border_width,
 									 config.jumplabeldata.corner_radius);

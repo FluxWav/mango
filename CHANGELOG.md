@@ -115,6 +115,63 @@ correctness (badge text/position, border color) not yet visually confirmed
 **Next:** the spatial grouping/partition algorithm
 (`overview_scale_grouped()`), the riskiest and largest remaining piece.
 
+## 2026-09-18 — v2 grouping algorithm: grid partition + real per-tag layout reuse
+
+**Done:**
+- User shared real mockups of the intended layout — a clean grid-of-rows
+  region partition (matching mango's own `grid()` layout's row/column math
+  almost exactly for N=2/3/4), each region showing that tag's *actual*
+  configured layout, not a generic packer. Superseded the dwindle-cascade
+  v1 entirely rather than keeping it as a fallback mode.
+- Deep research pass (before writing any code) into whether "temporarily
+  redirect `m->w`/current-tag, call the tag's real `Layout->arrange(m)`
+  unmodified, restore after" is actually safe — found and pre-solved a
+  real gap: `grid()`/`dwindle()` trust monitor-global
+  `visible_*_tiling_clients` counters rather than recomputing them, so the
+  redirect needs `pre_calculate_before_arrange(m, false, false, true)`
+  (the existing counting function, `only_calculate=true`) before *and*
+  after the per-tag loop, not just the `m->w`/tag swap alone.
+- Extracted `compute_grid_dims()` out of `grid()` (`src/layout/
+  horizontal.c`) — pure refactor, `grid()` itself unchanged in behavior.
+  Regression-verified: 5 windows in a real `grid`-layout tag arrange
+  identically before/after (3-over-2, short row centered, matches
+  pre-extraction output exactly).
+- Wrote the v2 `overview_scale_grouped()`: grid-of-rows partition via
+  `compute_grid_dims()`, then per occupied tag save/redirect (`m->w`,
+  `tagset[seltags]`, `pertag->curtag`)/recount/`Layout->arrange(m)`/restore.
+
+**Bugs found and fixed during nested testing (not assumed correct from
+review alone):**
+- SIGSEGV on first overview-open with all 4 tags occupied. Root-caused
+  with `coredumpctl` + `gdb bt`: `get_client_tag_idx()` already returns
+  the 1-based tag number (matching `pertag->curtag`/`ltidxs[]`'s own
+  convention), not a 0-based bit position as assumed — an extra `+1` in
+  both the new grouping code *and* the already-committed badge code
+  walked one slot past a real tag, landing on `ltidxs[]`'s uninitialized
+  (NULL) top slot. Fixed both; confirmed by tracing every other real call
+  site of `get_client_tag_idx()` in the codebase, not just this one.
+- Scroller layout produced off-region (even off-monitor) x positions for
+  non-focused stack windows in a small region — traced to its
+  non-centered path anchoring on the root client's *stale* full-width
+  `geom.x`. Fixed the root's own positioning by temporarily forcing
+  `config.scroller_focus_center = 1` around the per-tag loop (save/
+  restore, reuses scroller()'s existing centered-mode path, zero new
+  logic). Multi-window scroller tags can still scroll a window off-region
+  in a small enough space — confirmed this matches scroller()'s real
+  behavior on a narrow real monitor too (not new corruption), flagged for
+  the user rather than papered over with more custom code.
+
+**Verification:** nested, 4 real tags (scroller/dwindle/tile/grid, 2/2/1/5
+windows) — no crash, `grid`-layout regression check passed, dwindle/tile/
+grid regions all correctly rescale and reflow, scroller's root window
+correctly centered. Scroller's second window overflow is a known,
+understood, flagged-not-fixed edge case. Confirmed no state corruption on
+the real tag after closing grouped overview (checked scroller geometry
+before/after matches).
+
+**Next:** decide with the user how to handle the scroller-overflow edge
+case, then a real visual pass on the nested window.
+
 ## 2026-09-18 — Grouping/partition algorithm
 
 **Done:**

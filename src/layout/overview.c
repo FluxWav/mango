@@ -1,6 +1,9 @@
 #include "mango/layout/overview.h"
 #include "mango/common/server.h"
 #include "mango/config/parse_config.h"
+#include "mango/layout/arrange.h"
+#include "mango/layout/horizontal.h"
+#include "mango/layout/layout.h"
 #include "mango/manage/client.h"
 #include "mango/manage/monitor.h"
 #include "mango/overview/overview.h"
@@ -382,61 +385,73 @@ void overview_scale(Monitor *m) {
 	free(client_list);
 }
 
-// Tag-grouped overview: partitions the overview area into one region per
-// occupied tag (ascending tag index), cascading the same way dwindle
-// cascades a new client next to the focused leaf -- each additional
-// occupied tag splits the most-recently-added region in half, axis chosen
-// by that region's own aspect ratio (mirrors dwindle_assign's own rule).
-// Each region is then packed independently via overview_pack_region.
-void overview_scale_grouped(Monitor *m) {
-	int32_t target_gappo = config.overviewgappo;
-	int32_t target_gappi = config.overviewgappi;
+// Computes the region box for grid slot i (row-major, i/cols row, i%cols
+// column) within outer, using compute_grid_dims's cols/rows/overcols --
+// same equal-width-column/equal-height-row distribution grid() itself uses
+// for uniform (unweighted) items, with the trailing short row (if any)
+// horizontally centered rather than left-aligned, matching grid().
+static struct wlr_box grid_slot_box(struct wlr_box outer, int32_t cols,
+									int32_t rows, int32_t overcols, int32_t i,
+									int32_t gap) {
+	int32_t row_idx = i / cols;
+	int32_t col_idx = i % cols;
+	int32_t items_in_row =
+		(overcols > 0 && row_idx == rows - 1) ? overcols : cols;
 
-	int orig_n = m->visible_clients;
-	if (orig_n == 0)
+	float avail_w = fmaxf(1.0f, outer.width - (float)(cols - 1) * gap);
+	float avail_h = fmaxf(1.0f, outer.height - (float)(rows - 1) * gap);
+	float col_w = avail_w / cols;
+	float row_h = avail_h / rows;
+
+	float row_w = items_in_row * col_w + (items_in_row - 1) * gap;
+	float row_x0 = outer.x + (outer.width - row_w) / 2.0f;
+
+	return (struct wlr_box){
+		.x = (int)(row_x0 + col_idx * (col_w + gap) + 0.5f),
+		.y = (int)(outer.y + row_idx * (row_h + gap) + 0.5f),
+		.width = (int)(col_w + 0.5f),
+		.height = (int)(row_h + 0.5f),
+	};
+}
+
+// Tag-grouped overview: partitions the overview area into one region per
+// occupied tag, grid-of-rows style (compute_grid_dims -- the same
+// cols=ceil(sqrt(n)) row/column split grid() uses for windows, applied to
+// tag regions instead). Each region then shows that TAG's own real,
+// already-configured layout (scroller stays a scroller, dwindle stays a
+// dwindle tree, ...): m->w and the monitor's current-tag state are
+// temporarily redirected to the region box and that tag, the tag's own
+// Layout->arrange(m) is called completely unmodified, then everything is
+// restored. See DESIGN.md for why this is safe (client_tile_resize skips
+// the real protocol resize event entirely while m->isoverview is true; the
+// only_calculate pre_calculate_before_arrange refresh is required because
+// grid()/dwindle() trust monitor-global visible_*_tiling_clients counters
+// rather than recomputing them).
+void overview_scale_grouped(Monitor *m) {
+	if (m->visible_clients == 0)
 		return;
 
-	// Bucket visible clients by tag index (0-based, 0..tag_num_MAX).
-	Client **by_tag[tag_num_MAX + 1] = {0};
-	int count_by_tag[tag_num_MAX + 1] = {0};
+	int32_t count_by_tag[tag_num_MAX + 1] = {0};
 	Client *c;
 	wl_list_for_each(c, &server.clients, link) {
 		if (c->mon != m)
 			continue;
-		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
+		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c))
 			count_by_tag[get_client_tag_idx(c)]++;
-		}
 	}
 
-	int occupied_tags[tag_num_MAX + 1];
-	int occupied_count = 0;
-	for (int t = 0; t <= tag_num_MAX; t++) {
-		if (count_by_tag[t] > 0) {
-			by_tag[t] = calloc(count_by_tag[t], sizeof(Client *));
-			if (!by_tag[t]) {
-				for (int j = 0; j < t; j++)
-					free(by_tag[j]);
-				return;
-			}
+	int32_t occupied_tags[tag_num_MAX + 1];
+	int32_t occupied_count = 0;
+	for (int32_t t = 0; t <= tag_num_MAX; t++)
+		if (count_by_tag[t] > 0)
 			occupied_tags[occupied_count++] = t;
-		}
-	}
 
 	if (occupied_count == 0)
 		return;
 
-	int fill_idx[tag_num_MAX + 1] = {0};
-	wl_list_for_each(c, &server.clients, link) {
-		if (c->mon != m)
-			continue;
-		if (VISIBLEON(c, m) && !c->isunglobal && !client_is_x11_popup(c)) {
-			int t = get_client_tag_idx(c);
-			by_tag[t][fill_idx[t]++] = c;
-		}
-	}
+	int32_t target_gappo = config.overviewgappo;
+	int32_t target_gappi = config.overviewgappi;
 
-	// Single-tag case: identical to the flat layout, just via the shared
-	// helper -- no cascade needed.
 	struct wlr_box outer = {
 		.x = (int)(m->w.x + target_gappo),
 		.y = (int)(m->w.y + target_gappo),
@@ -444,44 +459,45 @@ void overview_scale_grouped(Monitor *m) {
 		.height = (int)fmaxf(1.0f, m->w.height - 2 * target_gappo),
 	};
 
-	struct wlr_box regions[tag_num_MAX + 1];
-	regions[0] = outer;
-	for (int i = 1; i < occupied_count; i++) {
-		struct wlr_box *last = &regions[i - 1];
-		bool split_h = last->width >= last->height;
-		if (split_h) {
-			int half_w =
-				(int)fmaxf(1.0f, (last->width - target_gappo) / 2.0f);
-			struct wlr_box first_half = {last->x, last->y, half_w,
-										 last->height};
-			struct wlr_box second_half = {last->x + half_w + target_gappo,
-										  last->y,
-										  last->width - half_w - target_gappo,
-										  last->height};
-			*last = first_half;
-			regions[i] = second_half;
-		} else {
-			int half_h =
-				(int)fmaxf(1.0f, (last->height - target_gappo) / 2.0f);
-			struct wlr_box first_half = {last->x, last->y, last->width,
-										 half_h};
-			struct wlr_box second_half = {last->x,
-										  last->y + half_h + target_gappo,
-										  last->width,
-										  last->height - half_h - target_gappo};
-			*last = first_half;
-			regions[i] = second_half;
-		}
+	int32_t cols, rows, overcols;
+	compute_grid_dims(occupied_count, &cols, &rows, &overcols);
+
+	struct wlr_box real_w = m->w;
+	uint32_t real_tagset = m->tagset[m->seltags];
+	uint32_t real_curtag = m->pertag->curtag;
+	// scroller() otherwise anchors its non-centered scroll positioning to
+	// the root client's stale geom.x from its last real (full-width)
+	// render, which is meaningless once m->w is a small region box --
+	// forcing centered mode (the same path scroller() already takes when
+	// the user sets this) sidesteps that stale-position dependency
+	// entirely, reusing scroller()'s own existing centering behavior
+	// rather than reimplementing anything.
+	int32_t real_scroller_focus_center = config.scroller_focus_center;
+	config.scroller_focus_center = 1;
+
+	for (int32_t i = 0; i < occupied_count; i++) {
+		// get_client_tag_idx()'s return value IS the 1-based tag number --
+		// the same convention pertag->curtag/ltidxs[] already use natively
+		// (confirmed against every other call site in the codebase, e.g.
+		// animation/client.c:777, manage/client.c:1148). The tagset
+		// bitmask is the one place that stays 0-based (parse_tag_mask()
+		// does `1 << (num - 1)`), so only that conversion needs a -1.
+		int32_t t = occupied_tags[i];
+		struct wlr_box region =
+			grid_slot_box(outer, cols, rows, overcols, i, target_gappi);
+
+		m->w = region;
+		m->tagset[m->seltags] = 1U << (t - 1);
+		m->pertag->curtag = (uint32_t)t;
+		pre_calculate_before_arrange(m, false, false, true);
+		m->pertag->ltidxs[t]->arrange(m);
 	}
 
-	for (int i = 0; i < occupied_count; i++) {
-		int t = occupied_tags[i];
-		overview_pack_region(by_tag[t], count_by_tag[t], regions[i],
-							 target_gappi);
-	}
-
-	for (int t = 0; t <= tag_num_MAX; t++)
-		free(by_tag[t]);
+	m->w = real_w;
+	m->tagset[m->seltags] = real_tagset;
+	m->pertag->curtag = real_curtag;
+	config.scroller_focus_center = real_scroller_focus_center;
+	pre_calculate_before_arrange(m, false, false, true);
 }
 
 // Overview layout: focused window centered (about half screen width), remaining

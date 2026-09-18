@@ -278,7 +278,7 @@ void overview_update_tag_badge(Client *c) {
 		return;
 
 	char text[8];
-	snprintf(text, sizeof(text), "%u", get_client_tag_idx(c) + 1);
+	snprintf(text, sizeof(text), "%u", get_client_tag_idx(c));
 	mango_jump_label_node_update(c->tag_label_node, text,
 								 c->mon->wlr_output->scale);
 

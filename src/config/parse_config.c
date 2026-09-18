@@ -52,7 +52,7 @@ static const uint32_t default_tag_colors[] = {
 	0x47add6ff, 0xb153a7ff, 0x14a57cff, 0xad401fff,
 	0xe0af68ff, 0x7aa2f7ff, 0x9ece6aff, 0xf7768eff,
 };
-#define DEFAULT_TAG_COLORS_COUNT                                             \
+#define DEFAULT_TAG_COLORS_COUNT                                               \
 	(sizeof(default_tag_colors) / sizeof(default_tag_colors[0]))
 
 /* Config file loading state. */
@@ -3978,9 +3978,8 @@ void set_value_default() {
 	config.overcircle_center_ratio = 0.5f;
 	config.overview_group_by_tag = 0;
 	for (int32_t i = 0; i <= tag_num_MAX; i++) {
-		convert_hex_to_rgba(
-			config.tag_colors[i],
-			default_tag_colors[i % DEFAULT_TAG_COLORS_COUNT]);
+		convert_hex_to_rgba(config.tag_colors[i],
+							default_tag_colors[i % DEFAULT_TAG_COLORS_COUNT]);
 	}
 	config.cursor_hide_timeout = 0;
 	config.cursor_hide_on_keypress = 0;

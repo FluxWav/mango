@@ -4,6 +4,22 @@
 #include "mango/manage/client.h"
 #include "mango/manage/monitor.h"
 
+void compute_grid_dims(int32_t n, int32_t *cols, int32_t *rows,
+					   int32_t *overcols) {
+	if (n <= 0) {
+		*cols = *rows = *overcols = 0;
+		return;
+	}
+	int32_t c;
+	for (c = 0; c <= n / 2; c++) {
+		if (c * c >= n)
+			break;
+	}
+	*cols = c;
+	*rows = (c && (c - 1) * c >= n) ? c - 1 : c;
+	*overcols = n % c;
+}
+
 void tile(Monitor *m) {
 	int32_t i, n = 0, h, r, ie = server.enable_gaps, mw, my, ty;
 	Client *c = NULL;
@@ -717,12 +733,7 @@ void grid(Monitor *m) {
 	}
 
 	// Computes the column and row counts.
-	for (cols = 0; cols <= n / 2; cols++) {
-		if (cols * cols >= n)
-			break;
-	}
-	rows = (cols && (cols - 1) * cols >= n) ? cols - 1 : cols;
-	overcols = n % cols;
+	compute_grid_dims(n, &cols, &rows, &overcols);
 
 	float *col_pers = calloc(cols, sizeof(*col_pers));
 	float *row_pers = calloc(rows, sizeof(*row_pers));
